@@ -1,0 +1,5 @@
+*.wav
+*.reapeaks
+InterviewRecordings
+__pycache__
+.idea
