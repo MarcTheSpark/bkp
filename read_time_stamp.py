@@ -3,13 +3,16 @@ import pandas as pd
 import pathlib
 import re
 
+
+recordings_folder = pathlib.Path("InterviewRecordings")
+
 transcriptions = {}
 timestamps = {}
 
-for file in pathlib.Path("InterviewRecordings").glob("*.transcription"):
+for file in recordings_folder.glob("*.transcription"):
     transcriptions[file.stem] = file.read_text().lower()
 
-for file in pathlib.Path("InterviewRecordings").glob("*.timestamps"):
+for file in recordings_folder.glob("*.timestamps"):
     df = pd.read_csv(file)
 
     max_char = max(df["char_position"])
@@ -38,7 +41,9 @@ def seek_phrase(phrase):
     )
 
     which_file, char_position = random.choice(locations)
-    return rarest_word, which_file, timestamps[which_file].loc[char_position, "audio_position"]
+    return rarest_word, \
+           str(recordings_folder.joinpath(which_file).with_suffix(".wav").resolve()), \
+           timestamps[which_file].loc[char_position, "audio_position"]
 
 # # print a list of words in order of how common
 # print(sorted(list(word_counts.items()), key=lambda x: x[1]))
