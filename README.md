@@ -1,5 +1,7 @@
 # Bauernkriegspanoramamusik
 
+## Python
+
 To process the audio simply run `process_audio.py`. This splits the audio into chunks, transcribes those
 chunks using Google speech-to-text, and calculates embeddings for those chunks. For each wave file,
 it saves a `.textchunks` file (containing the transcribed text), a `.samplocations.npy` file (containing 
@@ -13,3 +15,8 @@ for matches, and then sends osc messages to supercollider to loads those matches
 
 Finally, `glass_performer.py` is the actual composition itself, utilizing the `SpeechBufLoader` to
 listen and load buffers, and playing shards through osc instruments using those buffers.
+
+## SuperCollider
+
+Generally need to execute the main block in the main file (currently `ShardsAndDrones.scd`) before running 
+the composition in Python.
