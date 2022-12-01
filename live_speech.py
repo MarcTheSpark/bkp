@@ -59,8 +59,8 @@ class SpeechBufLoader(Thread):
                 for match in reversed(matches):
                     self.osc_client.send_message(
                         r'/loadbuf',
-                        [self._next_buf_to_fill, str(match.file_path), int(match.recording_start_sample) - 48000,
-                         10 * 48000]
+                        [self._next_buf_to_fill, str(match.file_path), match.recording_start_sample,
+                         match.recording_end_sample]
                     )
                     self._next_buf_to_fill = (self._next_buf_to_fill + 1) % self.num_bufs
 

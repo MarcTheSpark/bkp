@@ -47,5 +47,5 @@ def process_transcription(file_path, sentence_length=12, skip=5, batch_size=100)
         glob.unlink()
 
 
-for path in pathlib.Path("InterviewRecordings").glob("*.transcription"):
+for path in pathlib.Path("../InterviewRecordings").glob("*.transcription"):
     process_transcription(path)
