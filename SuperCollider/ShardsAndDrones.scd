@@ -11,13 +11,17 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 (
 // GLOBAL VARS
 ~numSpeechBufs = 10;
+~reverbFFTsize = 4096;
+~reverbIR = "SoundFiles/IRs/ConcertHall.wav";
+s.options.memSize = 2.pow(15);
+
 
 // SETUP FUNCTIONS
 ~loadEnvelopesAndShards = {
 	~flatEnv = Buffer.loadCollection(s, [1, 1]);
 	~decayEnv = Buffer.loadCollection(s, Env.perc.asSignal);
 	~shardBuffers = List.new;
-	PathName("Shards".resolveRelative).filesDo({
+	PathName("SoundFiles/Shards".resolveRelative).filesDo({
 		arg file;
 		~shardBuffers.add(Buffer.alloc(s, s.sampleRate * 1, 1,).readChannel(file.asAbsolutePath, channels: [0]));
 	});
@@ -70,6 +74,27 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 	~waveTerrainBuffer = Buffer.sendCollection(s, waveTerrainArray, 1);
 };
 
+~loadAndPrepImpulseResponses = {
+	{
+		var irbuffers, bufsizes;
+		irbuffers = Array.fill(2, { |i|
+			Buffer.readChannel(s, ~reverbIR.resolveRelative, channels:[i]);
+		});
+		s.sync;
+
+		bufsizes = Array.fill(2, { |i|
+			PartConv.calcBufSize(~reverbFFTsize, irbuffers[i]);
+		});
+
+
+		~irspectrums = Array.fill(2, { |i|
+			var spec = Buffer.alloc(s, bufsizes[i], 1);
+			spec.preparePartConv(irbuffers[i], ~reverbFFTsize);
+			spec;
+		});
+	}.fork;
+};
+
 ~startDrones = {
 	Synth(\wanderWave, [\out, ~reverbBus, \freq, 55.midicps, \ampModFreq, 0.007], target:~drones);
 	Synth(\wanderWave, [\out, ~reverbBus, \freq, 62.midicps, \ampModFreq, 0.011], target:~drones);
@@ -77,9 +102,21 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 };
 
 ~setUpSynthDefs = {
+	~distance = {
+		|inUGen, distance, directOut=0, reverbOut=0|
+		var lpffedUp = LPF.ar(inUGen, distance.linexp(0, 1, 15000, 400));
+		var lowPassProportion = distance.linlin(0, 0.5, 0, 1);
+		var proportionallyLowPassed = (inUGen * (1 - lowPassProportion)) + (lpffedUp * lowPassProportion);
+		var directProportion = distance.linlin(0, 1, 1, 0.2);
+		var verbedProportion = distance.linlin(0, 1, 0.2, 1);
+		Out.ar(directOut, proportionallyLowPassed * directProportion);
+		Out.ar(reverbOut, proportionallyLowPassed * verbedProportion);
+	};
+
+
 	ScampUtils.instrumentFromSynthDef(
 		SynthDef(\shardtalk, {
-			arg out=0, gate=1, volume=1, pitch=60, whichbuf=0, pan=0, panWidth=0.1;
+			arg out=0, gate=1, volume=1, pitch=60, whichbuf=0, pan=0, panWidth=0.1, distance=0;
 			var trig, shardGrains, speech, output, pitchRateMul;
 			trig = Dust.kr(volume.linlin(0, 1, 20, 100));
 			pitchRateMul = pitch.linexp(0, 127, 0.5, 2);
@@ -96,16 +133,13 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 			output = (Convolution.ar(speech, shardGrains, framesize:2048) + shardGrains) * (0.1 + Amplitude.ar(speech));
 			output = output * EnvGate.new(gate:gate, fadeTime:0.1);
 
-			Out.ar(
-				out,
-				output
-			);
+			~distance.value(output, distance, out, ~reverbBus);
 		}), target: ~shardClouds
 	);
 
 	ScampUtils.instrumentFromSynthDef(
 		SynthDef(\pureshard, {
-			arg out=0, gate=1, volume=1, pitch=60, pan=0, panWidth=0.1;
+			arg out=0, gate=1, volume=1, pitch=60, pan=0, panWidth=0.1, distance=0;
 			var trig, shardGrains, speech, output, pitchRateMul;
 			trig = Dust.kr(volume.linlin(0, 1, 20, 100));
 			pitchRateMul = pitch.linexp(0, 127, 0.5, 2);
@@ -120,19 +154,14 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 			) * volume;
 
 			output = shardGrains * EnvGate.new(gate:gate, fadeTime:0.1);
-
-			Out.ar(
-				out,
-				output
-			);
+			~distance.value(output, distance, out, ~reverbBus);
 		}), target: ~shardClouds
 	);
 
-	SynthDef(\reponsiveShards, {
+	SynthDef(\responsiveShards, {
 		arg out=0, gate=1, volume=1, pitch=60, pan=0, panWidth=0.5, inputAmplitudeThreshold=0.002;
 		var trig, shardGrains, speech, output, pitchRateMul;
 		volume = volume * (Amplitude.ar(SoundIn.ar, releaseTime: 2.0) - inputAmplitudeThreshold).max(0).pow(0.5);
-		volume.poll;
 		trig = Dust.kr(volume.linlin(0, 1, 20, 100));
 		pitchRateMul = pitch.linexp(0, 127, 0.5, 2);
 		shardGrains = GrainBuf.ar(
@@ -169,7 +198,7 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 	SynthDef(\verb, {
 		arg out=0;
 		var signalIn = In.ar(~reverbBus);
-		Out.ar(out, Greyhole.ar(signalIn));
+		Out.ar(out, PartConv.ar(signalIn, ~reverbFFTsize, ~irspectrums, 0.05));
 	}).play(target:~reverb);
 };
 
@@ -182,6 +211,7 @@ MarcUtilities.doSpeakerTest(outputLevel:0.05)
 };
 
 
+s.reboot;
 s.waitForBoot({
 	{
 		"Loading envelopes and shards...".post;
@@ -196,6 +226,9 @@ s.waitForBoot({
 		"Creating and loading wave terrain...".post;
 		~loadWaveTerrainArray.value; s.sync;
 		"done.".postln;
+		"Loading and prepping impulse responses...".post;
+		~loadAndPrepImpulseResponses.value; s.sync;
+		"done.".postln;
 		"Setting up SynthDefs...".post;
 		~setUpSynthDefs.value; s.sync;
 		"done.".postln;
@@ -205,7 +238,9 @@ s.waitForBoot({
 	}.fork;
 });
 )
-Synth(\verb)
+
+
+Synth(\responsiveShards)
 
 {Out.ar(~reverbBus, SinOsc.ar * EnvGen.ar(Env.perc(releaseTime:0.1)) * 0.6)}.play
 
